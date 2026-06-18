@@ -9,24 +9,166 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #0a0a0a; color: #e8e8e8; font-family: monospace; }
-  input, textarea, select, button { font-family: monospace; }
-  ::-webkit-scrollbar { width: 4px; } 
+  body { background: #0a0a0a; color: #e8e8e8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; }
+  input, textarea, select, button { font-family: inherit; }
+  ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: #111; }
-  ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+
+  /* Layout */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+  .sidebar { width: 220px; background: #0f0f0f; border-right: 1px solid #1a1a1a; display: flex; flex-direction: column; transition: transform 0.3s; z-index: 100; }
+  .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* Mobile */
+  @media (max-width: 768px) {
+    .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); }
+    .sidebar.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+    .mobile-header { display: flex !important; }
+    .editor-layout { flex-direction: column !important; }
+    .output-panel { width: 100% !important; height: 200px; border-left: none !important; border-top: 1px solid #1a1a1a !important; }
+  }
+  .mobile-header { display: none; align-items: center; gap: 12px; padding: 12px 16px; background: #0f0f0f; border-bottom: 1px solid #1a1a1a; }
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 99; }
+  .overlay.show { display: block; }
+
+  /* Auth */
+  .auth-wrap { min-height: 100vh; background: #0a0a0a; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .auth-card { width: 100%; max-width: 380px; background: #0f0f0f; border: 1px solid #1e1e1e; border-radius: 12px; padding: 32px; }
+  .auth-logo { font-size: 24px; font-weight: 800; letter-spacing: 6px; color: #fff; margin-bottom: 4px; }
+  .auth-sub { font-size: 11px; color: #444; letter-spacing: 2px; margin-bottom: 32px; }
+  .google-btn { width: 100%; padding: 11px; background: #fff; border: none; border-radius: 8px; color: #111; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 16px; transition: background 0.2s; }
+  .google-btn:hover { background: #f0f0f0; }
+  .divider { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .divider-line { flex: 1; height: 1px; background: #1e1e1e; }
+  .divider-text { font-size: 11px; color: #444; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 10px; color: #555; letter-spacing: 1px; margin-bottom: 5px; }
+  .field input { width: 100%; background: #0a0a0a; border: 1px solid #1e1e1e; color: #e8e8e8; padding: 10px 12px; font-size: 13px; border-radius: 8px; outline: none; transition: border 0.2s; }
+  .field input:focus { border-color: #4f8fff; }
+  .primary-btn { width: 100%; padding: 11px; background: #4f8fff; border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-bottom: 12px; }
+  .primary-btn:hover { background: #3a7aff; }
+  .primary-btn:disabled { background: #1e2a40; color: #4f8fff; cursor: not-allowed; }
+  .auth-switch { text-align: center; font-size: 12px; color: #444; cursor: pointer; }
+  .auth-switch span { color: #4f8fff; }
+  .error-msg { font-size: 11px; color: #ff5f57; margin-bottom: 10px; padding: 8px 10px; background: #1f0d0c; border-radius: 6px; }
+  .success-msg { font-size: 11px; color: #3ddc84; margin-bottom: 10px; padding: 8px 10px; background: #0a1f12; border-radius: 6px; }
+
+  /* Sidebar */
+  .sidebar-logo { padding: 20px 16px 16px; border-bottom: 1px solid #1a1a1a; }
+  .sidebar-logo-text { font-size: 16px; font-weight: 800; letter-spacing: 5px; color: #fff; }
+  .sidebar-logo-sub { font-size: 9px; color: #333; letter-spacing: 2px; margin-top: 2px; }
+  .sidebar-nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; color: #444; cursor: pointer; font-size: 13px; border-left: 2px solid transparent; transition: all 0.15s; }
+  .nav-item:hover { color: #888; background: #111; }
+  .nav-item.active { color: #4f8fff; background: #0d1f3c; border-left-color: #4f8fff; }
+  .nav-icon { font-size: 14px; width: 18px; text-align: center; }
+  .sidebar-section { padding: 6px 16px 4px; font-size: 9px; color: #333; letter-spacing: 2px; margin-top: 8px; }
+  .sidebar-user { padding: 12px 16px; border-top: 1px solid #1a1a1a; }
+  .user-email { font-size: 11px; color: #444; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .signout-btn { font-size: 11px; color: #444; background: transparent; border: 1px solid #1e1e1e; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+  .signout-btn:hover { color: #888; border-color: #333; }
+
+  /* Pages */
+  .page { flex: 1; overflow-y: auto; padding: 28px; }
+  .page-title { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .page-sub { font-size: 12px; color: #444; margin-bottom: 24px; }
+
+  /* Stats */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 24px; }
+  .stat-card { background: #0f0f0f; border: 1px solid #1a1a1a; border-radius: 10px; padding: 16px; }
+  .stat-label { font-size: 9px; color: #444; letter-spacing: 2px; margin-bottom: 6px; }
+  .stat-value { font-size: 28px; font-weight: 700; color: #fff; }
+
+  /* Flow cards */
+  .flow-card { background: #0f0f0f; border: 1px solid #1a1a1a; border-radius: 10px; padding: 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: border-color 0.15s; }
+  .flow-card:hover { border-color: #2a2a2a; }
+  .flow-icon { width: 36px; height: 36px; border-radius: 8px; background: #0d1f3c; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .flow-info { flex: 1; min-width: 0; }
+  .flow-name { font-size: 14px; color: #e8e8e8; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .flow-meta { font-size: 11px; color: #444; }
+  .flow-status { font-size: 11px; flex-shrink: 0; }
+  .status-active { color: #3ddc84; }
+  .status-off { color: #333; }
+  .delete-btn { font-size: 12px; color: #333; background: transparent; border: 1px solid #1e1e1e; padding: 4px 8px; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
+  .delete-btn:hover { color: #ff5f57; border-color: #ff5f57; }
+  .new-flow-btn { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: #0d1f3c; border: 1px solid #4f8fff; color: #4f8fff; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.15s; }
+  .new-flow-btn:hover { background: #1a2d4f; }
+  .empty-state { color: #333; font-size: 13px; padding: 32px 0; text-align: center; }
+
+  /* Editor */
+  .editor-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .editor-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #1a1a1a; background: #0f0f0f; flex-shrink: 0; }
+  .back-btn { background: transparent; border: none; color: #444; cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; }
+  .back-btn:hover { color: #888; }
+  .flow-name-input { background: transparent; border: none; color: #fff; font-size: 15px; font-weight: 700; outline: none; flex: 1; min-width: 0; }
+  .save-btn { padding: 7px 16px; background: transparent; border: 1px solid #1e1e1e; color: #888; border-radius: 7px; cursor: pointer; font-size: 12px; }
+  .save-btn:hover { border-color: #333; color: #fff; }
+  .run-btn { padding: 7px 16px; background: #0d1f3c; border: 1px solid #4f8fff; color: #4f8fff; border-radius: 7px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .run-btn:hover { background: #1a2d4f; }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .editor-layout { flex: 1; display: flex; overflow: hidden; }
+  .steps-panel { flex: 1; overflow-y: auto; padding: 20px; }
+  .output-panel { width: 260px; border-left: 1px solid #1a1a1a; background: #0f0f0f; display: flex; flex-direction: column; }
+  .output-header { padding: 10px 14px; border-bottom: 1px solid #1a1a1a; font-size: 9px; color: #444; letter-spacing: 2px; }
+  .output-body { flex: 1; overflow-y: auto; padding: 12px; font-size: 11px; color: #888; white-space: pre-wrap; word-break: break-all; line-height: 1.7; }
+
+  /* Steps */
+  .step-card { background: #0f0f0f; border: 1px solid #1a1a1a; border-radius: 10px; overflow: hidden; margin-bottom: 0; }
+  .step-card.open { border-color: var(--step-color); }
+  .step-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; user-select: none; }
+  .step-num { font-size: 10px; color: #333; width: 16px; }
+  .step-icon { font-size: 14px; }
+  .step-label-input { background: transparent; border: none; color: #e8e8e8; font-size: 13px; flex: 1; outline: none; cursor: text; }
+  .step-type { font-size: 10px; color: #444; }
+  .step-delete { background: transparent; border: none; color: #333; cursor: pointer; font-size: 17px; line-height: 1; padding: 0 2px; }
+  .step-delete:hover { color: #ff5f57; }
+  .step-body { padding: 12px 14px; border-top: 1px solid #1a1a1a; }
+  .step-connector { display: flex; justify-content: center; padding: 3px 0; }
+  .step-connector-line { width: 1px; height: 16px; background: #1e1e1e; }
+  .field-group { margin-bottom: 10px; }
+  .field-group label { display: block; font-size: 10px; color: #444; letter-spacing: 1px; margin-bottom: 4px; }
+  .field-group input, .field-group textarea, .field-group select { width: 100%; background: #0a0a0a; border: 1px solid #1e1e1e; color: #e8e8e8; padding: 8px 10px; font-size: 12px; border-radius: 7px; outline: none; }
+  .field-group input:focus, .field-group textarea:focus { border-color: #2a2a2a; }
+  .field-group textarea { resize: vertical; min-height: 70px; }
+  .step-hint { font-size: 11px; color: #333; }
+
+  /* Add step */
+  .add-step-section { margin-top: 16px; }
+  .add-step-label { font-size: 10px; color: #333; letter-spacing: 2px; margin-bottom: 8px; }
+  .step-types { display: flex; flex-wrap: wrap; gap: 6px; }
+  .step-type-btn { padding: 6px 12px; background: transparent; border: 1px solid #1a1a1a; border-radius: 7px; font-size: 11px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px; }
+  .step-type-btn:hover { background: #111; border-color: #2a2a2a; }
+
+  /* Logs */
+  .log-row { background: #0f0f0f; border: 1px solid #1a1a1a; border-radius: 8px; padding: 10px 14px; margin-bottom: 6px; display: flex; gap: 12px; align-items: center; font-size: 12px; }
+  .log-status-success { color: #3ddc84; min-width: 50px; }
+  .log-status-error { color: #ff5f57; min-width: 50px; }
+  .log-flow { color: #e8e8e8; min-width: 100px; }
+  .log-msg { color: #444; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .log-time { color: #333; font-size: 10px; flex-shrink: 0; }
+
+  /* Header actions */
+  .header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .hamburger { background: transparent; border: none; color: #888; cursor: pointer; font-size: 20px; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useCallback, useRef } = React;
+const { useState, useEffect, useCallback } = React;
 
 const SUPABASE_URL = "https://bvqprseehnayxllwzwsb.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2cXByc2VlaG5heXhsbHd6d3NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2NDYwNzEsImV4cCI6MjA5NzIyMjA3MX0.D1I90ZG6OYhNrnhjBP1q5DODgoXqz7djFxKRQPMCWH8";
+const APP_URL = "https://djaddjadem25-beep.github.io/Flash-_/";
 
 const sb = {
   h: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-  ah(token) { return { ...this.h, Authorization: `Bearer ${token}` }; },
+  ah(t) { return { ...this.h, Authorization: `Bearer ${t}` }; },
+  async signInGoogle() {
+    const url = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(APP_URL)}`;
+    window.location.href = url;
+  },
   async signUp(email, password) {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/signup`, { method: "POST", headers: this.h, body: JSON.stringify({ email, password }) });
     return r.json();
@@ -37,6 +179,27 @@ const sb = {
   },
   async signOut(token) {
     await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.ah(token) });
+  },
+  async getSession() {
+    const hash = window.location.hash;
+    if (hash && hash.includes("access_token")) {
+      const params = new URLSearchParams(hash.slice(1));
+      const token = params.get("access_token");
+      const refresh = params.get("refresh_token");
+      if (token) {
+        const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: this.ah(token) });
+        const user = await r.json();
+        localStorage.setItem("flash_token", token);
+        localStorage.setItem("flash_refresh", refresh || "");
+        localStorage.setItem("flash_user", JSON.stringify(user));
+        window.location.hash = "";
+        return { token, user };
+      }
+    }
+    const token = localStorage.getItem("flash_token");
+    const user = localStorage.getItem("flash_user");
+    if (token && user) return { token, user: JSON.parse(user) };
+    return null;
   },
   async getWorkflows(token) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/workflows?order=created_at.desc`, { headers: this.ah(token) });
@@ -62,38 +225,33 @@ const sb = {
   }
 };
 
-const C = {
-  bg: "#0a0a0a", surface: "#111111", border: "#1e1e1e", border2: "#2a2a2a",
-  text: "#e8e8e8", muted: "#555555", dim: "#333333",
-  accent: "#4f8fff", accentDim: "#0d1f3c",
-  green: "#3ddc84", red: "#ff5f57", yellow: "#ffc107", purple: "#a78bfa",
-};
-
 const STEP_TYPES = {
-  trigger_manual: { label: "Manual Trigger", color: C.green, icon: "▶" },
-  trigger_webhook: { label: "Webhook", color: C.accent, icon: "⚡" },
-  trigger_schedule: { label: "Schedule", color: C.yellow, icon: "⏰" },
-  action_http: { label: "HTTP Request", color: C.accent, icon: "🌐" },
-  action_ai: { label: "AI Step", color: C.purple, icon: "◈" },
-  action_condition: { label: "Condition", color: C.yellow, icon: "◇" },
-  action_transform: { label: "Transform", color: C.text, icon: "⟳" },
-  action_mcp: { label: "MCP Tool", color: C.green, icon: "⬡" },
+  trigger_manual: { label: "Manual Trigger", color: "#3ddc84", icon: "▶" },
+  trigger_webhook: { label: "Webhook", color: "#4f8fff", icon: "⚡" },
+  trigger_schedule: { label: "Schedule", color: "#ffc107", icon: "⏰" },
+  action_http: { label: "HTTP Request", color: "#4f8fff", icon: "🌐" },
+  action_ai: { label: "AI Step", color: "#a78bfa", icon: "◈" },
+  action_condition: { label: "Condition", color: "#ffc107", icon: "◇" },
+  action_transform: { label: "Transform", color: "#888", icon: "⟳" },
+  action_mcp: { label: "MCP Tool", color: "#3ddc84", icon: "⬡" },
 };
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
 function AuthPage({ onAuth }) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [pass, setPass] = useState("");
   const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handle = async () => {
-    if (!email || !password) return setError("Fill all fields");
-    setLoading(true); setError("");
+    if (!email || !pass) return setError("Fill all fields");
+    setLoading(true); setError(""); setMsg("");
     try {
-      const data = mode === "signin" ? await sb.signIn(email, password) : await sb.signUp(email, password);
+      const data = mode === "signin" ? await sb.signIn(email, pass) : await sb.signUp(email, pass);
       if (data.access_token) {
         localStorage.setItem("flash_token", data.access_token);
         localStorage.setItem("flash_user", JSON.stringify(data.user));
@@ -101,250 +259,233 @@ function AuthPage({ onAuth }) {
       } else if (data.error_description || data.msg) {
         setError(data.error_description || data.msg);
       } else if (mode === "signup") {
-        setError("Account created! Check email to confirm, then sign in.");
+        setMsg("Account created! Check email to confirm, then sign in.");
       }
-    } catch (e) { setError(e.message); }
+    } catch(e) { setError(e.message); }
     setLoading(false);
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: 340, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 32 }}>
-        <div style={{ fontWeight: 700, fontSize: 22, letterSpacing: 6, color: C.text, marginBottom: 4 }}>FLASH</div>
-        <div style={{ fontSize: 10, color: C.muted, letterSpacing: 2, marginBottom: 28 }}>AUTOMATION</div>
-        {[["EMAIL", "email", email, setEmail], ["PASSWORD", "password", password, setPassword]].map(([label, type, val, set]) => (
-          <div key={label} style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, letterSpacing: 1 }}>{label}</div>
-            <input type={type} value={val} onChange={e => set(e.target.value)} onKeyDown={e => e.key === "Enter" && handle()}
-              style={{ width: "100%", background: C.bg, border: `1px solid ${C.border2}`, color: C.text, padding: "8px 10px", fontSize: 12, borderRadius: 4, outline: "none" }} />
-          </div>
-        ))}
-        {error && <div style={{ fontSize: 11, color: error.includes("created") ? C.green : C.red, marginBottom: 10 }}>{error}</div>}
-        <button onClick={handle} disabled={loading}
-          style={{ width: "100%", padding: "9px 0", background: C.accentDim, border: `1px solid ${C.accent}`, color: C.accent, cursor: "pointer", fontSize: 12, borderRadius: 4, marginBottom: 12 }}>
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <div className="auth-logo">FLASH</div>
+        <div className="auth-sub">AUTOMATION</div>
+
+        <button className="google-btn" onClick={() => sb.signInGoogle()}>
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.3z"/></svg>
+          Continue with Google
+        </button>
+
+        <div className="divider">
+          <div className="divider-line" />
+          <span className="divider-text">or</span>
+          <div className="divider-line" />
+        </div>
+
+        <div className="field">
+          <label>EMAIL</label>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handle()} placeholder="you@example.com" />
+        </div>
+        <div className="field">
+          <label>PASSWORD</label>
+          <input type="password" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && handle()} placeholder="••••••••" />
+        </div>
+
+        {error && <div className="error-msg">{error}</div>}
+        {msg && <div className="success-msg">{msg}</div>}
+
+        <button className="primary-btn" onClick={handle} disabled={loading}>
           {loading ? "..." : mode === "signin" ? "Sign In" : "Create Account"}
         </button>
-        <div style={{ textAlign: "center", fontSize: 11, color: C.muted, cursor: "pointer" }} onClick={() => { setMode(m => m === "signin" ? "signup" : "signin"); setError(""); }}>
-          {mode === "signin" ? "No account? Sign up" : "Have account? Sign in"}
+        <div className="auth-switch" onClick={() => { setMode(m => m === "signin" ? "signup" : "signin"); setError(""); setMsg(""); }}>
+          {mode === "signin" ? <>No account? <span>Sign up</span></> : <>Have account? <span>Sign in</span></>}
         </div>
       </div>
     </div>
   );
 }
 
-function StepCard({ step, onUpdate, onDelete, index, total }) {
+// ── Step Card ─────────────────────────────────────────────────────────────────
+function StepCard({ step, index, total, onUpdate, onDelete }) {
   const [open, setOpen] = useState(false);
   const meta = STEP_TYPES[step.type] || STEP_TYPES.action_http;
 
   const inp = (label, key, placeholder = "", type = "text") => (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>{label}</div>
-      <input type={type} value={step.config?.[key] || ""} onChange={e => onUpdate({ config: { ...step.config, [key]: e.target.value } })} placeholder={placeholder}
-        style={{ width: "100%", background: C.bg, border: `1px solid ${C.border2}`, color: C.text, padding: "5px 8px", fontSize: 11, borderRadius: 3, outline: "none" }} />
+    <div className="field-group">
+      <label>{label}</label>
+      <input type={type} value={step.config?.[key] || ""} onChange={e => onUpdate({ config: { ...step.config, [key]: e.target.value } })} placeholder={placeholder} />
     </div>
   );
-
   const ta = (label, key, placeholder = "") => (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>{label}</div>
-      <textarea value={step.config?.[key] || ""} onChange={e => onUpdate({ config: { ...step.config, [key]: e.target.value } })} placeholder={placeholder} rows={3}
-        style={{ width: "100%", background: C.bg, border: `1px solid ${C.border2}`, color: C.text, padding: "5px 8px", fontSize: 11, borderRadius: 3, resize: "vertical", outline: "none" }} />
+    <div className="field-group">
+      <label>{label}</label>
+      <textarea value={step.config?.[key] || ""} onChange={e => onUpdate({ config: { ...step.config, [key]: e.target.value } })} placeholder={placeholder} />
     </div>
   );
 
   return (
     <div>
-      <div onClick={() => setOpen(o => !o)}
-        style={{ background: C.surface, border: `1px solid ${open ? meta.color : C.border}`, borderRadius: open ? "6px 6px 0 0" : 6, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, userSelect: "none" }}>
-        <span style={{ color: C.muted, fontSize: 10, width: 16 }}>{index + 1}</span>
-        <span style={{ color: meta.color, fontSize: 13 }}>{meta.icon}</span>
-        <input value={step.label} onChange={e => { e.stopPropagation(); onUpdate({ label: e.target.value }); }} onClick={e => e.stopPropagation()}
-          style={{ background: "transparent", border: "none", color: C.text, fontSize: 12, flex: 1, outline: "none" }} />
-        <span style={{ fontSize: 10, color: C.muted }}>{meta.label}</span>
-        <button onClick={e => { e.stopPropagation(); onDelete(); }}
-          style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button>
+      <div className={`step-card ${open ? "open" : ""}`} style={{ "--step-color": meta.color }}>
+        <div className="step-header" onClick={() => setOpen(o => !o)}>
+          <span className="step-num">{index + 1}</span>
+          <span className="step-icon" style={{ color: meta.color }}>{meta.icon}</span>
+          <input className="step-label-input" value={step.label} onChange={e => { e.stopPropagation(); onUpdate({ label: e.target.value }); }} onClick={e => e.stopPropagation()} />
+          <span className="step-type">{meta.label}</span>
+          <button className="step-delete" onClick={e => { e.stopPropagation(); onDelete(); }}>×</button>
+        </div>
+        {open && (
+          <div className="step-body">
+            {step.type === "action_http" && <>{inp("URL", "url", "https://api.example.com")}{inp("Method", "method", "GET")}{inp("Headers (JSON)", "headers", '{"Authorization":"Bearer ..."}')}{ta("Body", "body")}</>}
+            {step.type === "action_ai" && <>{ta("Prompt", "prompt", "Summarize this data...")}
+              <div className="field-group"><label>ANTHROPIC API KEY</label><input type="password" value={step.config?.apikey || ""} onChange={e => onUpdate({ config: { ...step.config, apikey: e.target.value } })} placeholder="sk-ant-..." /></div>
+            </>}
+            {step.type === "action_mcp" && <>{inp("MCP Server URL", "mcp_url")}{inp("Tool Name", "tool_name")}{ta("Tool Input (JSON)", "tool_input")}</>}
+            {step.type === "action_condition" && <>{inp("Field", "field", "response.status")}{inp("Operator", "operator", "equals")}{inp("Value", "value", "200")}</>}
+            {step.type === "action_transform" && ta("Expression", "expression", "data.results.map(r => r.name)")}
+            {step.type === "trigger_webhook" && inp("Path", "path", "/hooks/my-flow")}
+            {step.type === "trigger_schedule" && inp("Cron", "cron", "0 9 * * 1-5")}
+            {step.type === "trigger_manual" && <p className="step-hint">Triggered manually via Run button.</p>}
+          </div>
+        )}
       </div>
-      {open && (
-        <div style={{ background: C.surface, border: `1px solid ${meta.color}`, borderTop: "none", borderRadius: "0 0 6px 6px", padding: "12px 14px" }}>
-          {step.type === "action_http" && <>{inp("URL", "url", "https://api.example.com")}{inp("Method", "method", "GET")}{inp("Headers (JSON)", "headers", '{"Authorization":"Bearer ..."}')}{ta("Body", "body")}</>}
-          {step.type === "action_ai" && <>{ta("Prompt", "prompt", "Summarize this data...")}
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>ANTHROPIC API KEY</div>
-              <input type="password" value={step.config?.apikey || ""} onChange={e => onUpdate({ config: { ...step.config, apikey: e.target.value } })} placeholder="sk-ant-..."
-                style={{ width: "100%", background: C.bg, border: `1px solid ${C.border2}`, color: C.text, padding: "5px 8px", fontSize: 11, borderRadius: 3, outline: "none" }} />
-            </div>
-          </>}
-          {step.type === "action_mcp" && <>{inp("MCP Server URL", "mcp_url", "https://mcp.example.com/sse")}{inp("Tool Name", "tool_name")}{ta("Tool Input (JSON)", "tool_input")}</>}
-          {step.type === "action_condition" && <>{inp("Field", "field", "response.status")}{inp("Operator", "operator", "equals")}{inp("Value", "value", "200")}</>}
-          {step.type === "action_transform" && ta("Expression", "expression", "data.results.map(r => r.name)")}
-          {step.type === "trigger_webhook" && inp("Path", "path", "/hooks/my-flow")}
-          {step.type === "trigger_schedule" && inp("Cron", "cron", "0 9 * * 1-5")}
-          {step.type === "trigger_manual" && <div style={{ fontSize: 11, color: C.muted }}>Triggered manually via Run button.</div>}
-        </div>
-      )}
-      {index < total - 1 && (
-        <div style={{ display: "flex", justifyContent: "center", padding: "3px 0" }}>
-          <div style={{ width: 1, height: 16, background: C.border2 }} />
-        </div>
-      )}
+      {index < total - 1 && <div className="step-connector"><div className="step-connector-line" /></div>}
     </div>
   );
 }
 
+// ── Run Engine ────────────────────────────────────────────────────────────────
 async function runSteps(steps, onLog) {
-  let context = {};
-  let hasError = false;
+  let ctx = {}; let hasError = false;
   for (const step of steps) {
     onLog(`\n▸ ${step.label}\n`);
     try {
-      if (step.type === "trigger_manual") {
-        context.trigger = { timestamp: new Date().toISOString() };
-        onLog(`  ✓ Triggered\n`);
-      } else if (step.type === "action_http") {
+      if (step.type === "trigger_manual") { ctx.trigger = { ts: new Date().toISOString() }; onLog("  ✓ Triggered\n"); }
+      else if (step.type === "action_http") {
         const url = step.config?.url;
-        if (!url) { onLog(`  ✗ No URL\n`); hasError = true; continue; }
+        if (!url) { onLog("  ✗ No URL\n"); hasError = true; continue; }
         const res = await fetch(url, { method: step.config?.method || "GET", headers: step.config?.headers ? JSON.parse(step.config.headers) : {} });
         const data = await res.json().catch(() => ({}));
-        context.http = data;
+        ctx.http = data;
         onLog(`  ✓ ${res.status} — ${JSON.stringify(data).slice(0, 200)}\n`);
-      } else if (step.type === "action_ai") {
-        const apiKey = step.config?.apikey;
-        if (!apiKey) { onLog(`  ✗ No Anthropic API key in step config\n`); hasError = true; continue; }
-        onLog(`  ◈ Calling Claude...\n`);
-        const prompt = (step.config?.prompt || "Process:") + "\n\nContext: " + JSON.stringify(context).slice(0, 500);
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] })
-        });
+      }
+      else if (step.type === "action_ai") {
+        const key = step.config?.apikey;
+        if (!key) { onLog("  ✗ No API key\n"); hasError = true; continue; }
+        onLog("  ◈ Calling Claude...\n");
+        const prompt = (step.config?.prompt || "Process:") + "\n\nContext: " + JSON.stringify(ctx).slice(0, 500);
+        const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
         const data = await res.json();
         const text = data.content?.map(c => c.text || "").join("") || JSON.stringify(data);
-        context.ai = text;
+        ctx.ai = text;
         onLog(`  ✓ ${text.slice(0, 300)}\n`);
-      } else if (step.type === "action_condition") {
-        const val = step.config?.field?.split(".").reduce((o, k) => o?.[k], context);
-        const pass = String(val) === String(step.config?.value || "");
-        context.condition = pass;
-        onLog(`  ${pass ? "✓" : "✗"} ${val} ${step.config?.operator} ${step.config?.value} → ${pass ? "pass" : "fail"}\n`);
-      } else if (step.type === "action_transform") {
-        const result = new Function("data", "context", `return ${step.config?.expression}`)(context.http, context);
-        context.transform = result;
-        onLog(`  ✓ ${JSON.stringify(result).slice(0, 200)}\n`);
-      } else if (step.type === "action_mcp") {
-        onLog(`  ⬡ MCP: ${step.config?.mcp_url} → ${step.config?.tool_name}\n  (Requires local MCP server)\n`);
-      } else {
-        onLog(`  ✓ done\n`);
       }
-    } catch (e) { onLog(`  ✗ ${e.message}\n`); hasError = true; }
+      else if (step.type === "action_condition") {
+        const val = step.config?.field?.split(".").reduce((o, k) => o?.[k], ctx);
+        const pass = String(val) === String(step.config?.value || "");
+        ctx.condition = pass;
+        onLog(`  ${pass ? "✓" : "✗"} ${val} ${step.config?.operator} ${step.config?.value} → ${pass ? "pass" : "fail"}\n`);
+      }
+      else if (step.type === "action_transform") {
+        const result = new Function("data", "ctx", `return ${step.config?.expression}`)(ctx.http, ctx);
+        ctx.transform = result;
+        onLog(`  ✓ ${JSON.stringify(result).slice(0, 150)}\n`);
+      }
+      else if (step.type === "action_mcp") { onLog(`  ⬡ MCP: ${step.config?.mcp_url} → ${step.config?.tool_name}\n`); }
+      else { onLog(`  ✓ done\n`); }
+    } catch(e) { onLog(`  ✗ ${e.message}\n`); hasError = true; }
   }
-  onLog(`\n${hasError ? "— Completed with errors —" : "— Done ✓ —"}\n`);
-  return { hasError, context };
+  onLog(`\n${hasError ? "— Errors occurred —" : "— Done ✓ —"}\n`);
+  return { hasError };
 }
 
-function WorkflowEditor({ wf, token, onSave, onBack }) {
+// ── Editor ────────────────────────────────────────────────────────────────────
+function Editor({ wf, token, onSave, onBack }) {
   const [steps, setSteps] = useState(wf.steps || []);
   const [name, setName] = useState(wf.name || "Untitled");
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [log, setLog] = useState("");
 
-  const addStep = type => setSteps(s => [...s, { id: uid(), type, label: STEP_TYPES[type].label, config: {} }]);
-  const updateStep = (id, patch) => setSteps(s => s.map(st => st.id === id ? { ...st, ...patch } : st));
+  const addStep = t => setSteps(s => [...s, { id: uid(), type: t, label: STEP_TYPES[t].label, config: {} }]);
+  const updateStep = (id, p) => setSteps(s => s.map(st => st.id === id ? { ...st, ...p } : st));
   const deleteStep = id => setSteps(s => s.filter(st => st.id !== id));
 
-  const save = async () => {
-    setSaving(true);
-    await onSave({ ...wf, name, steps });
-    setSaving(false);
-  };
+  const save = async () => { setSaving(true); await onSave({ ...wf, name, steps }); setSaving(false); };
 
   const run = async () => {
-    setRunning(true);
-    setLog("Starting...\n");
-    let fullLog = "Starting...\n";
-    const { hasError } = await runSteps(steps, chunk => { fullLog += chunk; setLog(fullLog); });
-    await sb.saveLog(token, { flow_name: name, status: hasError ? "error" : "success", message: fullLog.slice(0, 300) });
+    setRunning(true); setLog("Starting...\n");
+    let full = "Starting...\n";
+    const { hasError } = await runSteps(steps, c => { full += c; setLog(full); });
+    await sb.saveLog(token, { flow_name: name, status: hasError ? "error" : "success", message: full.slice(0, 300) });
     setRunning(false);
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", background: C.bg }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: C.surface }}>
-          <button onClick={onBack} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontSize: 18 }}>←</button>
-          <input value={name} onChange={e => setName(e.target.value)}
-            style={{ background: "transparent", border: "none", color: C.text, fontSize: 14, fontWeight: 700, outline: "none", flex: 1 }} />
-          <button onClick={save} disabled={saving}
-            style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${C.border2}`, color: saving ? C.muted : C.text, cursor: "pointer", fontSize: 11, borderRadius: 3 }}>
-            {saving ? "Saving..." : "Save"}
-          </button>
-          <button onClick={run} disabled={running}
-            style={{ padding: "5px 14px", background: running ? C.dim : C.accentDim, border: `1px solid ${running ? C.muted : C.accent}`, color: running ? C.muted : C.accent, cursor: running ? "not-allowed" : "pointer", fontSize: 11, borderRadius: 3 }}>
-            {running ? "⟳ Running" : "▶ Run"}
-          </button>
-        </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+    <div className="editor-wrap">
+      <div className="editor-header">
+        <button className="back-btn" onClick={onBack}>←</button>
+        <input className="flow-name-input" value={name} onChange={e => setName(e.target.value)} />
+        <button className="save-btn" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</button>
+        <button className="run-btn" onClick={run} disabled={running}>{running ? "⟳ Running" : "▶ Run"}</button>
+      </div>
+      <div className="editor-layout">
+        <div className="steps-panel">
           <div style={{ maxWidth: 520 }}>
-            {steps.length === 0 && <div style={{ color: C.muted, fontSize: 12, padding: "20px 0" }}>No steps yet — add one below ↓</div>}
+            {steps.length === 0 && <div style={{ color: "#333", fontSize: 13, padding: "20px 0" }}>No steps yet — add one below ↓</div>}
             {steps.map((step, i) => (
               <StepCard key={step.id} step={step} index={i} total={steps.length}
-                onUpdate={patch => updateStep(step.id, patch)} onDelete={() => deleteStep(step.id)} />
+                onUpdate={p => updateStep(step.id, p)} onDelete={() => deleteStep(step.id)} />
             ))}
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 10, color: C.muted, letterSpacing: 2, marginBottom: 8 }}>ADD STEP</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {Object.entries(STEP_TYPES).map(([type, meta]) => (
-                  <button key={type} onClick={() => addStep(type)}
-                    style={{ padding: "5px 10px", background: "transparent", border: `1px solid ${C.border2}`, color: meta.color, cursor: "pointer", fontSize: 11, borderRadius: 3 }}>
-                    {meta.icon} {meta.label}
+            <div className="add-step-section">
+              <div className="add-step-label">ADD STEP</div>
+              <div className="step-types">
+                {Object.entries(STEP_TYPES).map(([t, m]) => (
+                  <button key={t} className="step-type-btn" onClick={() => addStep(t)} style={{ color: m.color }}>
+                    {m.icon} {m.label}
                   </button>
                 ))}
               </div>
             </div>
           </div>
         </div>
-      </div>
-      <div style={{ width: 280, borderLeft: `1px solid ${C.border}`, background: C.surface, display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, letterSpacing: 2 }}>OUTPUT</div>
-        <div style={{ flex: 1, overflowY: "auto", padding: 12, fontSize: 10, color: C.text, whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6 }}>
-          {log || <span style={{ color: C.muted }}>Run to see output</span>}
+        <div className="output-panel">
+          <div className="output-header">OUTPUT</div>
+          <div className="output-body">{log || <span style={{ color: "#333" }}>Run to see output</span>}</div>
         </div>
       </div>
     </div>
   );
 }
 
+// ── Main App ──────────────────────────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState("flows");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [workflows, setWorkflows] = useState([]);
   const [logs, setLogs] = useState([]);
   const [editing, setEditing] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("flash_token");
-    const user = localStorage.getItem("flash_user");
-    if (token && user) setSession({ token, user: JSON.parse(user) });
+    sb.getSession().then(s => { if (s) setSession(s); setLoading(false); });
   }, []);
 
   const load = useCallback(async () => {
     if (!session) return;
-    setLoading(true);
+    setDataLoading(true);
     const [wfs, ls] = await Promise.all([sb.getWorkflows(session.token), sb.getLogs(session.token)]);
     setWorkflows(Array.isArray(wfs) ? wfs : []);
     setLogs(Array.isArray(ls) ? ls : []);
-    setLoading(false);
+    setDataLoading(false);
   }, [session]);
 
   useEffect(() => { load(); }, [load]);
 
-  const handleAuth = s => setSession(s);
-
-  const handleSignOut = async () => {
+  const signOut = async () => {
     if (session?.token) await sb.signOut(session.token);
-    localStorage.removeItem("flash_token");
-    localStorage.removeItem("flash_user");
+    localStorage.clear();
     setSession(null);
   };
 
@@ -365,83 +506,105 @@ function App() {
     setWorkflows(w => w.filter(x => x.id !== id));
   };
 
-  if (!session) return <AuthPage onAuth={handleAuth} />;
+  if (loading) return <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", color: "#333" }}>Loading...</div>;
+  if (!session) return <AuthPage onAuth={s => setSession(s)} />;
 
   if (editing) return (
-    <WorkflowEditor wf={editing} token={session.token}
+    <Editor wf={editing} token={session.token}
       onSave={async wf => { await saveFlow(wf); setEditing(wf); }}
       onBack={() => { setEditing(null); load(); }} />
   );
 
+  const navItems = [
+    { id: "flows", icon: "⬡", label: "Flows" },
+    { id: "logs", icon: "≡", label: "Logs" },
+  ];
+
   return (
-    <div style={{ display: "flex", height: "100vh", background: C.bg }}>
-      <div style={{ width: 180, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "18px 16px 14px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: 4, color: C.text }}>FLASH</div>
-          <div style={{ fontSize: 9, color: C.muted, marginTop: 2, letterSpacing: 2 }}>AUTOMATION</div>
+    <div className="app">
+      {/* Mobile overlay */}
+      <div className={`overlay ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
+
+      {/* Sidebar */}
+      <div className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <div className="sidebar-logo">
+          <div className="sidebar-logo-text">FLASH</div>
+          <div className="sidebar-logo-sub">AUTOMATION</div>
         </div>
-        <nav style={{ padding: "8px 0", flex: 1 }}>
-          {[["flows", "⬡", "Flows"], ["logs", "≡", "Logs"]].map(([id, icon, label]) => (
-            <button key={id} onClick={() => setPage(id)}
-              style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "8px 16px", background: page === id ? C.accentDim : "transparent", border: "none", borderLeft: page === id ? `2px solid ${C.accent}` : "2px solid transparent", color: page === id ? C.accent : C.muted, cursor: "pointer", fontSize: 12 }}>
-              {icon} {label}
-            </button>
+        <div className="sidebar-nav">
+          {navItems.map(n => (
+            <div key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`}
+              onClick={() => { setPage(n.id); setSidebarOpen(false); }}>
+              <span className="nav-icon">{n.icon}</span>{n.label}
+            </div>
           ))}
-        </nav>
-        <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {session.user?.email?.split("@")[0] || "user"}
-          </div>
-          <button onClick={handleSignOut}
-            style={{ background: "transparent", border: `1px solid ${C.border2}`, color: C.muted, cursor: "pointer", fontSize: 10, borderRadius: 3, padding: "3px 8px" }}>
-            Sign out
-          </button>
+        </div>
+        <div className="sidebar-user">
+          <div className="user-email">{session.user?.email || "user"}</div>
+          <button className="signout-btn" onClick={signOut}>Sign out</button>
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      {/* Main */}
+      <div className="main">
+        {/* Mobile header */}
+        <div className="mobile-header">
+          <button className="hamburger" onClick={() => setSidebarOpen(true)}>☰</button>
+          <span style={{ fontWeight: 700, letterSpacing: 4, fontSize: 14 }}>FLASH</span>
+          <div className="header-actions">
+            {page === "flows" && <button className="new-flow-btn" onClick={newFlow} style={{ padding: "6px 12px", fontSize: 12 }}>+ New</button>}
+          </div>
+        </div>
+
+        {/* Flows */}
         {page === "flows" && (
-          <div style={{ padding: 28 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <div className="page">
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 10, color: C.muted, letterSpacing: 2, marginBottom: 4 }}>WORKFLOWS</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>{workflows.length} Flows</div>
+                <div className="page-title">{workflows.length} Flows</div>
+                <div className="page-sub">Your automation workflows</div>
               </div>
-              <button onClick={newFlow}
-                style={{ padding: "7px 16px", background: C.accentDim, border: `1px solid ${C.accent}`, color: C.accent, cursor: "pointer", fontSize: 11, borderRadius: 4 }}>
-                + New Flow
-              </button>
+              <button className="new-flow-btn" onClick={newFlow}>+ New Flow</button>
             </div>
-            {loading && <div style={{ color: C.muted, fontSize: 12 }}>Loading...</div>}
-            {!loading && workflows.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>No flows yet. Create your first one!</div>}
-            {workflows.map(wf => (
-              <div key={wf.id} onClick={() => setEditing(wf)}
-                style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: C.text, marginBottom: 3 }}>{wf.name}</div>
-                  <div style={{ fontSize: 10, color: C.muted }}>{(wf.steps || []).length} steps · {new Date(wf.created_at).toLocaleDateString()}</div>
+
+            <div className="stats-grid">
+              {[["FLOWS", workflows.length], ["ACTIVE", workflows.filter(w => w.enabled).length], ["RUNS", logs.length], ["ERRORS", logs.filter(l => l.status === "error").length]].map(([l, v]) => (
+                <div key={l} className="stat-card">
+                  <div className="stat-label">{l}</div>
+                  <div className="stat-value">{v}</div>
                 </div>
-                <span style={{ fontSize: 10, color: wf.enabled ? C.green : C.muted }}>{wf.enabled ? "● active" : "○ off"}</span>
-                <button onClick={e => { e.stopPropagation(); deleteFlow(wf.id); }}
-                  style={{ background: "transparent", border: `1px solid ${C.border2}`, color: C.muted, cursor: "pointer", fontSize: 11, borderRadius: 3, padding: "3px 8px" }}>
-                  Delete
-                </button>
+              ))}
+            </div>
+
+            {dataLoading && <div style={{ color: "#333", fontSize: 13 }}>Loading...</div>}
+            {!dataLoading && workflows.length === 0 && <div className="empty-state">No flows yet.<br />Create your first automation!</div>}
+            {workflows.map(wf => (
+              <div key={wf.id} className="flow-card" onClick={() => setEditing(wf)}>
+                <div className="flow-icon">⬡</div>
+                <div className="flow-info">
+                  <div className="flow-name">{wf.name}</div>
+                  <div className="flow-meta">{(wf.steps || []).length} steps · {new Date(wf.created_at).toLocaleDateString()}</div>
+                </div>
+                <span className={`flow-status ${wf.enabled ? "status-active" : "status-off"}`}>{wf.enabled ? "● active" : "○ off"}</span>
+                <button className="delete-btn" onClick={e => { e.stopPropagation(); deleteFlow(wf.id); }}>Delete</button>
               </div>
             ))}
           </div>
         )}
+
+        {/* Logs */}
         {page === "logs" && (
-          <div style={{ padding: 28 }}>
-            <div style={{ fontSize: 10, color: C.muted, letterSpacing: 2, marginBottom: 4 }}>EXECUTION HISTORY</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 20 }}>Logs</div>
-            {loading && <div style={{ color: C.muted, fontSize: 12 }}>Loading...</div>}
-            {!loading && logs.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>No runs yet.</div>}
+          <div className="page">
+            <div className="page-title">Logs</div>
+            <div className="page-sub">Execution history</div>
+            {dataLoading && <div style={{ color: "#333", fontSize: 13 }}>Loading...</div>}
+            {!dataLoading && logs.length === 0 && <div className="empty-state">No runs yet.</div>}
             {logs.map(l => (
-              <div key={l.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "10px 14px", marginBottom: 6, display: "flex", gap: 12, alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: l.status === "success" ? C.green : C.red, minWidth: 50 }}>{l.status}</span>
-                <span style={{ fontSize: 11, color: C.text, minWidth: 120 }}>{l.flow_name}</span>
-                <span style={{ fontSize: 10, color: C.muted, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.message}</span>
-                <span style={{ fontSize: 10, color: C.muted }}>{new Date(l.created_at).toLocaleTimeString()}</span>
+              <div key={l.id} className="log-row">
+                <span className={l.status === "success" ? "log-status-success" : "log-status-error"}>{l.status}</span>
+                <span className="log-flow">{l.flow_name}</span>
+                <span className="log-msg">{l.message}</span>
+                <span className="log-time">{new Date(l.created_at).toLocaleTimeString()}</span>
               </div>
             ))}
           </div>
