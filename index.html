@@ -154,6 +154,11 @@
 </style>
 </head>
 <body>
+<script>
+window.addEventListener('error', function(e) {
+  document.body.innerHTML = '<div style="background:#1a0000;color:#ff8888;padding:20px;font-family:monospace;font-size:13px;white-space:pre-wrap;">ERROR: ' + e.message + '\nFile: ' + e.filename + '\nLine: ' + e.lineno + ':' + e.colno + '</div>';
+});
+</script>
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useEffect, useCallback } = React;
@@ -181,24 +186,29 @@ const sb = {
     await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.ah(token) });
   },
   async getSession() {
-    const hash = window.location.hash;
-    if (hash && hash.includes("access_token")) {
-      const params = new URLSearchParams(hash.slice(1));
-      const token = params.get("access_token");
-      const refresh = params.get("refresh_token");
-      if (token) {
-        const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: this.ah(token) });
-        const user = await r.json();
-        localStorage.setItem("flash_token", token);
-        localStorage.setItem("flash_refresh", refresh || "");
-        localStorage.setItem("flash_user", JSON.stringify(user));
-        window.location.hash = "";
-        return { token, user };
+    try {
+      const raw = window.location.hash || window.location.search;
+      if (raw && raw.includes("access_token")) {
+        const cleaned = raw.replace(/^[#?]/, "");
+        const params = new URLSearchParams(cleaned);
+        const token = params.get("access_token");
+        const refresh = params.get("refresh_token");
+        if (token) {
+          const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: this.ah(token) });
+          const user = await r.json();
+          localStorage.setItem("flash_token", token);
+          localStorage.setItem("flash_refresh", refresh || "");
+          localStorage.setItem("flash_user", JSON.stringify(user));
+          history.replaceState(null, "", window.location.pathname);
+          return { token, user };
+        }
       }
-    }
+    } catch (e) { console.error("session parse error", e); }
     const token = localStorage.getItem("flash_token");
     const user = localStorage.getItem("flash_user");
-    if (token && user) return { token, user: JSON.parse(user) };
+    if (token && user) {
+      try { return { token, user: JSON.parse(user) }; } catch(e) { return null; }
+    }
     return null;
   },
   async getWorkflows(token) {
@@ -468,7 +478,10 @@ function App() {
   const [editing, setEditing] = useState(null);
   const [dataLoading, setDataLoading] = useState(false);
 
+  const [debugInfo, setDebugInfo] = useState("");
+
   useEffect(() => {
+    setDebugInfo(`hash: ${window.location.hash.slice(0, 80)} | search: ${window.location.search.slice(0, 80)}`);
     sb.getSession().then(s => { if (s) setSession(s); setLoading(false); });
   }, []);
 
@@ -507,7 +520,14 @@ function App() {
   };
 
   if (loading) return <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", color: "#333" }}>Loading...</div>;
-  if (!session) return <AuthPage onAuth={s => setSession(s)} />;
+  if (!session) {
+    return (
+      <div>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, background: "#ff5f57", color: "#000", fontSize: 10, padding: 4, zIndex: 999, wordBreak: "break-all" }}>{debugInfo}</div>
+        <AuthPage onAuth={s => setSession(s)} />
+      </div>
+    );
+  }
 
   if (editing) return (
     <Editor wf={editing} token={session.token}
@@ -604,4 +624,17 @@ function App() {
                 <span className={l.status === "success" ? "log-status-success" : "log-status-error"}>{l.status}</span>
                 <span className="log-flow">{l.flow_name}</span>
                 <span className="log-msg">{l.message}</span>
-          
+                <span className="log-time">{new Date(l.created_at).toLocaleTimeString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById("root"));
+</script>
+</body>
+</html>
