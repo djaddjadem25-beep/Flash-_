@@ -604,17 +604,4 @@ function App() {
                 <span className={l.status === "success" ? "log-status-success" : "log-status-error"}>{l.status}</span>
                 <span className="log-flow">{l.flow_name}</span>
                 <span className="log-msg">{l.message}</span>
-                <span className="log-time">{new Date(l.created_at).toLocaleTimeString()}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-ReactDOM.render(<App />, document.getElementById("root"));
-</script>
-</body>
-</html>
+          
