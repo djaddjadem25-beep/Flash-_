@@ -151,6 +151,30 @@
   /* Header actions */
   .header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   .hamburger { background: transparent; border: none; color: #888; cursor: pointer; font-size: 20px; }
+
+  /* AI Generator */
+  .ai-generate-btn { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: #1e1530; border: 1px solid #a78bfa; color: #a78bfa; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.15s; }
+  .ai-generate-btn:hover { background: #2a1f42; }
+  .ai-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .ai-modal { width: 100%; max-width: 520px; background: #0f0f0f; border: 1px solid #1e1e1e; border-radius: 12px; padding: 24px; max-height: 85vh; overflow-y: auto; }
+  .ai-modal-title { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .ai-modal-sub { font-size: 12px; color: #444; margin-bottom: 18px; }
+  .ai-prompt-input { width: 100%; background: #0a0a0a; border: 1px solid #1e1e1e; color: #e8e8e8; padding: 12px; font-size: 13px; border-radius: 8px; outline: none; resize: vertical; min-height: 90px; font-family: inherit; margin-bottom: 12px; }
+  .ai-prompt-input:focus { border-color: #a78bfa; }
+  .ai-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .ai-modal-cancel { padding: 9px 16px; background: transparent; border: 1px solid #1e1e1e; color: #888; border-radius: 7px; cursor: pointer; font-size: 13px; }
+  .ai-modal-generate { padding: 9px 16px; background: #1e1530; border: 1px solid #a78bfa; color: #a78bfa; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .ai-modal-generate:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ai-key-note { font-size: 11px; color: #444; margin-bottom: 14px; padding: 10px 12px; background: #0a0a0a; border-radius: 7px; border: 1px solid #1a1a1a; line-height: 1.6; }
+  .ai-examples { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .ai-example-chip { font-size: 11px; color: #666; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 7px; padding: 8px 10px; cursor: pointer; text-align: left; }
+  .ai-example-chip:hover { border-color: #a78bfa; color: #a78bfa; }
+  .ai-result-preview { margin-top: 4px; }
+  .ai-result-step { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 7px; margin-bottom: 6px; font-size: 12px; }
+  .credential-tag { font-size: 9px; background: #2a1f00; color: #ffc107; border-radius: 5px; padding: 2px 6px; margin-left: auto; }
+  .credentials-needed-box { background: #0a1f12; border: 1px solid #1a4030; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+  .credentials-needed-title { font-size: 11px; color: #3ddc84; letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
+  .credentials-needed-list { font-size: 12px; color: #888; line-height: 1.8; }
 </style>
 </head>
 <body>
@@ -248,6 +272,118 @@ const STEP_TYPES = {
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
+function getStoredApiKey() {
+  try { return localStorage.getItem("flash_anthropic_key") || ""; } catch(e) { return ""; }
+}
+function setStoredApiKey(key) {
+  try { localStorage.setItem("flash_anthropic_key", key); } catch(e) {}
+}
+
+// Maps AI-chosen step "kind" strings to our internal STEP_TYPES keys
+const AI_KIND_MAP = {
+  manual_trigger: "trigger_manual",
+  webhook_trigger: "trigger_webhook",
+  schedule_trigger: "trigger_schedule",
+  http_request: "action_http",
+  ai_step: "action_ai",
+  condition: "action_condition",
+  transform: "action_transform",
+  mcp_tool: "action_mcp",
+};
+
+const AI_SYSTEM_PROMPT = `You are a workflow planning engine for an automation tool called FLASH.
+The user will describe an automation task in plain English or Telugu-English mix.
+Your job: output ONLY valid JSON (no markdown fences, no commentary) describing the workflow as a sequence of steps.
+
+JSON shape:
+{
+  "name": "short workflow name",
+  "steps": [
+    {
+      "kind": "manual_trigger | webhook_trigger | schedule_trigger | http_request | ai_step | condition | transform | mcp_tool",
+      "label": "short human label for this step",
+      "needs_credentials": ["list of short credential names this step needs, e.g. 'Gmail OAuth', 'Slack Webhook URL', 'API Key'"],
+      "config_hints": { "key": "human readable hint of what goes in this config field" }
+    }
+  ]
+}
+
+Rules:
+- Always start with exactly one trigger step (manual_trigger, webhook_trigger, or schedule_trigger).
+- Use http_request for any external API/service call (Gmail, Slack, Sheets, CRM, etc. are all reached via their HTTP APIs or webhooks).
+- Use ai_step only when the task needs text generation, summarization, classification, or reasoning.
+- Use condition for any "if/only if" branching logic mentioned by the user.
+- Keep steps minimal and practical — most workflows need 2-5 steps.
+- needs_credentials should be specific and short, e.g. ["Slack Webhook URL"], ["Gmail API Key"], not full sentences.
+- If a step needs no credentials (e.g. manual_trigger, transform), use an empty array.
+- Output ONLY the JSON object, nothing else.`;
+
+async function generateWorkflowFromPrompt(userPrompt, apiKey) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1500,
+      system: AI_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`API error ${res.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const text = (data.content || []).map(c => c.text || "").join("").trim();
+
+  // Strip potential markdown fences defensively, even though we asked for raw JSON
+  let cleaned = text;
+  if (cleaned.indexOf("```") === 0) {
+    cleaned = cleaned.slice(cleaned.indexOf("\n") + 1);
+  }
+  const fenceEnd = cleaned.lastIndexOf("```");
+  if (fenceEnd !== -1) {
+    cleaned = cleaned.slice(0, fenceEnd);
+  }
+  cleaned = cleaned.trim();
+
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    throw new Error("AI response was not valid JSON. Please try rephrasing your prompt.");
+  }
+
+  if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length === 0) {
+    throw new Error("AI did not return any workflow steps. Please try rephrasing your prompt.");
+  }
+
+  // Convert AI step shape into our internal step shape
+  const steps = parsed.steps.map(s => {
+    const type = AI_KIND_MAP[s.kind] || "action_http";
+    const meta = STEP_TYPES[type] || STEP_TYPES.action_http;
+    return {
+      id: uid(),
+      type,
+      label: s.label || meta.label,
+      config: {},
+      needsCredentials: Array.isArray(s.needs_credentials) ? s.needs_credentials : [],
+      configHints: s.config_hints && typeof s.config_hints === "object" ? s.config_hints : {},
+    };
+  });
+
+  return {
+    name: parsed.name || "AI Generated Flow",
+    steps,
+  };
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 function AuthPage({ onAuth }) {
   const [mode, setMode] = useState("signin");
@@ -315,6 +451,121 @@ function AuthPage({ onAuth }) {
   );
 }
 
+// ── AI Workflow Generator ────────────────────────────────────────────────────
+function AIGeneratorModal({ onClose, onGenerated }) {
+  const [prompt, setPrompt] = useState("");
+  const [apiKey, setApiKey] = useState(getStoredApiKey());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [preview, setPreview] = useState(null);
+
+  const examples = [
+    "Gmail lo new lead email vasthe Slack lo notify cheyi",
+    "Every morning 9am ki weather check chesi summary pampu",
+    "Webhook nundi data vaste, AI tho summarize chesi log cheyi",
+  ];
+
+  const handleGenerate = async () => {
+    if (!prompt.trim()) { setError("Please describe what you want to automate."); return; }
+    if (!apiKey.trim()) { setError("Please enter your Anthropic API key."); return; }
+    setError(""); setLoading(true); setPreview(null);
+    try {
+      setStoredApiKey(apiKey.trim());
+      const result = await generateWorkflowFromPrompt(prompt.trim(), apiKey.trim());
+      setPreview(result);
+    } catch (e) {
+      setError(e.message || "Something went wrong generating the workflow.");
+    }
+    setLoading(false);
+  };
+
+  const handleUseThis = () => {
+    if (preview) onGenerated(preview);
+  };
+
+  const allCredentials = preview
+    ? [...new Set(preview.steps.flatMap(s => s.needsCredentials || []))]
+    : [];
+
+  return (
+    <div className="ai-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ai-modal">
+        <div className="ai-modal-title">◈ Generate with AI</div>
+        <div className="ai-modal-sub">Describe what you want to automate — FLASH will build the workflow for you.</div>
+
+        <div className="ai-key-note">
+          Your Anthropic API key is stored only in this browser (localStorage) and used directly from your device to call Claude. It is never sent to FLASH's servers.
+        </div>
+
+        <div className="field-group">
+          <label>ANTHROPIC API KEY</label>
+          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-ant-..." />
+        </div>
+
+        <div className="field-group">
+          <label>DESCRIBE YOUR AUTOMATION</label>
+          <textarea
+            className="ai-prompt-input"
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            placeholder="e.g. Gmail lo new email vasthe Slack notify cheyi"
+          />
+        </div>
+
+        {!preview && (
+          <div className="ai-examples">
+            {examples.map((ex, i) => (
+              <button key={i} className="ai-example-chip" onClick={() => setPrompt(ex)}>{ex}</button>
+            ))}
+          </div>
+        )}
+
+        {error && <div className="error-msg">{error}</div>}
+
+        {preview && (
+          <div className="ai-result-preview">
+            {allCredentials.length > 0 && (
+              <div className="credentials-needed-box">
+                <div className="credentials-needed-title">CREDENTIALS YOU'LL NEED</div>
+                <div className="credentials-needed-list">
+                  {allCredentials.map((c, i) => <div key={i}>• {c}</div>)}
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: "#444", letterSpacing: 1, marginBottom: 8 }}>GENERATED STEPS — {preview.name}</div>
+            {preview.steps.map((s, i) => {
+              const meta = STEP_TYPES[s.type] || STEP_TYPES.action_http;
+              return (
+                <div key={s.id} className="ai-result-step">
+                  <span style={{ color: meta.color }}>{meta.icon}</span>
+                  <span>{i + 1}. {s.label}</span>
+                  {s.needsCredentials && s.needsCredentials.length > 0 && (
+                    <span className="credential-tag">{s.needsCredentials.length} credential{s.needsCredentials.length > 1 ? "s" : ""}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="ai-modal-actions" style={{ marginTop: 16 }}>
+          <button className="ai-modal-cancel" onClick={onClose}>Cancel</button>
+          {!preview ? (
+            <button className="ai-modal-generate" onClick={handleGenerate} disabled={loading}>
+              {loading ? "Generating..." : "Generate Workflow"}
+            </button>
+          ) : (
+            <>
+              <button className="ai-modal-cancel" onClick={() => setPreview(null)}>Try Again</button>
+              <button className="ai-modal-generate" onClick={handleUseThis}>Use This Workflow →</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Step Card ─────────────────────────────────────────────────────────────────
 function StepCard({ step, index, total, onUpdate, onDelete }) {
   const [open, setOpen] = useState(false);
@@ -340,11 +591,22 @@ function StepCard({ step, index, total, onUpdate, onDelete }) {
           <span className="step-num">{index + 1}</span>
           <span className="step-icon" style={{ color: meta.color }}>{meta.icon}</span>
           <input className="step-label-input" value={step.label} onChange={e => { e.stopPropagation(); onUpdate({ label: e.target.value }); }} onClick={e => e.stopPropagation()} />
+          {step.needsCredentials && step.needsCredentials.length > 0 && (
+            <span className="credential-tag">{step.needsCredentials.length} needed</span>
+          )}
           <span className="step-type">{meta.label}</span>
           <button className="step-delete" onClick={e => { e.stopPropagation(); onDelete(); }}>×</button>
         </div>
         {open && (
           <div className="step-body">
+            {step.needsCredentials && step.needsCredentials.length > 0 && (
+              <div className="credentials-needed-box">
+                <div className="credentials-needed-title">CREDENTIALS NEEDED</div>
+                <div className="credentials-needed-list">
+                  {step.needsCredentials.map((c, i) => <div key={i}>• {c}</div>)}
+                </div>
+              </div>
+            )}
             {step.type === "action_http" && <>{inp("URL", "url", "https://api.example.com")}{inp("Method", "method", "GET")}{inp("Headers (JSON)", "headers", '{"Authorization":"Bearer ..."}')}{ta("Body", "body")}</>}
             {step.type === "action_ai" && <>{ta("Prompt", "prompt", "Summarize this data...")}
               <div className="field-group"><label>ANTHROPIC API KEY</label><input type="password" value={step.config?.apikey || ""} onChange={e => onUpdate({ config: { ...step.config, apikey: e.target.value } })} placeholder="sk-ant-..." /></div>
@@ -477,6 +739,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [editing, setEditing] = useState(null);
   const [dataLoading, setDataLoading] = useState(false);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
 
   const [debugInfo, setDebugInfo] = useState("");
 
@@ -498,12 +761,21 @@ function App() {
 
   const signOut = async () => {
     if (session?.token) await sb.signOut(session.token);
-    localStorage.clear();
+    localStorage.removeItem("flash_token");
+    localStorage.removeItem("flash_refresh");
+    localStorage.removeItem("flash_user");
     setSession(null);
   };
 
   const newFlow = async () => {
     const res = await sb.saveWorkflow(session.token, { name: "New Flow", steps: [], enabled: false });
+    const saved = Array.isArray(res) ? res[0] : res;
+    if (saved?.id) { setWorkflows(w => [saved, ...w]); setEditing(saved); }
+  };
+
+  const handleAIGenerated = async (generated) => {
+    setAiModalOpen(false);
+    const res = await sb.saveWorkflow(session.token, { name: generated.name, steps: generated.steps, enabled: false });
     const saved = Array.isArray(res) ? res[0] : res;
     if (saved?.id) { setWorkflows(w => [saved, ...w]); setEditing(saved); }
   };
@@ -572,6 +844,7 @@ function App() {
           <button className="hamburger" onClick={() => setSidebarOpen(true)}>☰</button>
           <span style={{ fontWeight: 700, letterSpacing: 4, fontSize: 14 }}>FLASH</span>
           <div className="header-actions">
+            {page === "flows" && <button className="ai-generate-btn" onClick={() => setAiModalOpen(true)} style={{ padding: "6px 12px", fontSize: 12 }}>◈ AI</button>}
             {page === "flows" && <button className="new-flow-btn" onClick={newFlow} style={{ padding: "6px 12px", fontSize: 12 }}>+ New</button>}
           </div>
         </div>
@@ -579,12 +852,15 @@ function App() {
         {/* Flows */}
         {page === "flows" && (
           <div className="page">
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
               <div>
                 <div className="page-title">{workflows.length} Flows</div>
                 <div className="page-sub">Your automation workflows</div>
               </div>
-              <button className="new-flow-btn" onClick={newFlow}>+ New Flow</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="ai-generate-btn" onClick={() => setAiModalOpen(true)}>◈ Generate with AI</button>
+                <button className="new-flow-btn" onClick={newFlow}>+ New Flow</button>
+              </div>
             </div>
 
             <div className="stats-grid">
@@ -630,6 +906,13 @@ function App() {
           </div>
         )}
       </div>
+
+      {aiModalOpen && (
+        <AIGeneratorModal
+          onClose={() => setAiModalOpen(false)}
+          onGenerated={handleAIGenerated}
+        />
+      )}
     </div>
   );
 }
