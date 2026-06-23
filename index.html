@@ -177,6 +177,26 @@
   .credentials-needed-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
   .credentials-needed-title { font-size: 11px; color: #16a34a; letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
   .credentials-needed-list { font-size: 12px; color: #555; line-height: 1.8; }
+
+  /* AI Canvas Preview */
+  .ai-modal.wide { max-width: 720px; }
+  .ai-canvas-wrap { background: #fafafa; border: 1px solid #ebebeb; border-radius: 10px; padding: 20px 16px; margin-bottom: 14px; overflow-x: auto; }
+  .ai-canvas-track { display: flex; align-items: flex-start; gap: 0; min-width: max-content; }
+  .ai-canvas-node { display: flex; flex-direction: column; align-items: center; width: 150px; flex-shrink: 0; }
+  .ai-canvas-box { width: 132px; background: #ffffff; border: 1.5px solid var(--node-color); border-radius: 10px; padding: 12px 10px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.04); animation: nodeAppear 0.35s ease-out backwards; }
+  .ai-canvas-icon { font-size: 20px; margin-bottom: 6px; display: block; }
+  .ai-canvas-label { font-size: 11px; color: #1a1a1a; font-weight: 600; line-height: 1.3; margin-bottom: 4px; word-break: break-word; }
+  .ai-canvas-type { font-size: 9px; color: #aaa; letter-spacing: 0.5px; }
+  .ai-canvas-cred { display: inline-block; margin-top: 6px; font-size: 8px; background: #fff7e6; color: #d97706; border-radius: 4px; padding: 1px 5px; border: 1px solid #fde9c0; }
+  .ai-canvas-connector { display: flex; align-items: center; justify-content: center; width: 36px; height: 132px; flex-shrink: 0; }
+  .ai-canvas-arrow { width: 28px; height: 2px; background: #e0e0e0; position: relative; }
+  .ai-canvas-arrow::after { content: ""; position: absolute; right: -1px; top: -3px; border: 4px solid transparent; border-left-color: #e0e0e0; }
+  .ai-canvas-building { display: flex; align-items: center; gap: 8px; color: #ff6b1a; font-size: 12px; font-weight: 600; padding: 30px 0; justify-content: center; }
+  .ai-canvas-dot { width: 6px; height: 6px; border-radius: 50%; background: #ff6b1a; animation: dotPulse 1.2s ease-in-out infinite; }
+  .ai-canvas-dot:nth-child(2) { animation-delay: 0.15s; }
+  .ai-canvas-dot:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes dotPulse { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.1); } }
+  @keyframes nodeAppear { from { opacity: 0; transform: translateY(8px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
 </style>
 </head>
 <body>
@@ -491,7 +511,7 @@ function AIGeneratorModal({ onClose, onGenerated }) {
 
   return (
     <div className="ai-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="ai-modal">
+      <div className={`ai-modal ${(preview || loading) ? "wide" : ""}`}>
         <div className="ai-modal-title">◈ Generate with AI</div>
         <div className="ai-modal-sub">Describe what you want to automate — FLASH will build the workflow for you.</div>
 
@@ -514,7 +534,7 @@ function AIGeneratorModal({ onClose, onGenerated }) {
           />
         </div>
 
-        {!preview && (
+        {!preview && !loading && (
           <div className="ai-examples">
             {examples.map((ex, i) => (
               <button key={i} className="ai-example-chip" onClick={() => setPrompt(ex)}>{ex}</button>
@@ -523,6 +543,17 @@ function AIGeneratorModal({ onClose, onGenerated }) {
         )}
 
         {error && <div className="error-msg">{error}</div>}
+
+        {loading && (
+          <div className="ai-canvas-wrap">
+            <div className="ai-canvas-building">
+              <span>Building your workflow</span>
+              <span className="ai-canvas-dot"></span>
+              <span className="ai-canvas-dot"></span>
+              <span className="ai-canvas-dot"></span>
+            </div>
+          </div>
+        )}
 
         {preview && (
           <div className="ai-result-preview">
@@ -534,19 +565,31 @@ function AIGeneratorModal({ onClose, onGenerated }) {
                 </div>
               </div>
             )}
-            <div style={{ fontSize: 11, color: "#aaa", letterSpacing: 1, marginBottom: 8 }}>GENERATED STEPS — {preview.name}</div>
-            {preview.steps.map((s, i) => {
-              const meta = STEP_TYPES[s.type] || STEP_TYPES.action_http;
-              return (
-                <div key={s.id} className="ai-result-step">
-                  <span style={{ color: meta.color }}>{meta.icon}</span>
-                  <span>{i + 1}. {s.label}</span>
-                  {s.needsCredentials && s.needsCredentials.length > 0 && (
-                    <span className="credential-tag">{s.needsCredentials.length} credential{s.needsCredentials.length > 1 ? "s" : ""}</span>
-                  )}
-                </div>
-              );
-            })}
+            <div style={{ fontSize: 11, color: "#aaa", letterSpacing: 1, marginBottom: 8 }}>GENERATED WORKFLOW — {preview.name}</div>
+            <div className="ai-canvas-wrap">
+              <div className="ai-canvas-track">
+                {preview.steps.map((s, i) => {
+                  const meta = STEP_TYPES[s.type] || STEP_TYPES.action_http;
+                  return (
+                    <React.Fragment key={s.id}>
+                      <div className="ai-canvas-node">
+                        <div className="ai-canvas-box" style={{ "--node-color": meta.color, animationDelay: `${i * 0.12}s` }}>
+                          <span className="ai-canvas-icon" style={{ color: meta.color }}>{meta.icon}</span>
+                          <div className="ai-canvas-label">{s.label}</div>
+                          <div className="ai-canvas-type">{meta.label}</div>
+                          {s.needsCredentials && s.needsCredentials.length > 0 && (
+                            <div className="ai-canvas-cred">{s.needsCredentials.length} cred{s.needsCredentials.length > 1 ? "s" : ""}</div>
+                          )}
+                        </div>
+                      </div>
+                      {i < preview.steps.length - 1 && (
+                        <div className="ai-canvas-connector"><div className="ai-canvas-arrow"></div></div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
