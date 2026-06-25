@@ -295,10 +295,10 @@ const STEP_TYPES = {
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
 function getStoredApiKey() {
-  try { return localStorage.getItem("flash_anthropic_key") || ""; } catch(e) { return ""; }
+  try { return localStorage.getItem("flash_openrouter_key") || ""; } catch(e) { return ""; }
 }
 function setStoredApiKey(key) {
-  try { localStorage.setItem("flash_anthropic_key", key); } catch(e) {}
+  try { localStorage.setItem("flash_openrouter_key", key); } catch(e) {}
 }
 
 // Maps AI-chosen step "kind" strings to our internal STEP_TYPES keys
@@ -341,19 +341,19 @@ Rules:
 - Output ONLY the JSON object, nothing else.`;
 
 async function generateWorkflowFromPrompt(userPrompt, apiKey) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
+      "Authorization": `Bearer ${apiKey}`,
+      "X-Title": "FLASH",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      system: AI_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
+      model: "deepseek/deepseek-chat-v3.1:free",
+      messages: [
+        { role: "system", content: AI_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
     }),
   });
 
@@ -363,7 +363,7 @@ async function generateWorkflowFromPrompt(userPrompt, apiKey) {
   }
 
   const data = await res.json();
-  const text = (data.content || []).map(c => c.text || "").join("").trim();
+  const text = (data.choices?.[0]?.message?.content || "").trim();
 
   // Strip potential markdown fences defensively, even though we asked for raw JSON
   let cleaned = text;
@@ -490,7 +490,7 @@ function AIGeneratorModal({ onClose, onGenerated }) {
 
   const handleGenerate = async () => {
     if (!prompt.trim()) { setError("Please describe what you want to automate."); return; }
-    if (!apiKey.trim()) { setError("Please enter your Anthropic API key."); return; }
+    if (!apiKey.trim()) { setError("Please enter your OpenRouter API key."); return; }
     setError(""); setLoading(true); setPreview(null);
     try {
       setStoredApiKey(apiKey.trim());
@@ -517,12 +517,12 @@ function AIGeneratorModal({ onClose, onGenerated }) {
         <div className="ai-modal-sub">Describe what you want to automate — FLASH will build the workflow for you.</div>
 
         <div className="ai-key-note">
-          Your Anthropic API key is stored only in this browser (localStorage) and used directly from your device to call Claude. It is never sent to FLASH's servers.
+          Your OpenRouter API key is stored only in this browser (localStorage) and used directly from your device. It is never sent to FLASH's servers. Get a free key at <strong>openrouter.ai</strong> — no credit card needed.
         </div>
 
         <div className="field-group">
-          <label>ANTHROPIC API KEY</label>
-          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-ant-..." />
+          <label>OPENROUTER API KEY</label>
+          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-or-v1-..." />
         </div>
 
         <div className="field-group">
@@ -655,7 +655,7 @@ function StepCard({ step, index, total, onUpdate, onDelete }) {
             )}
             {step.type === "action_http" && <>{inp("URL", "url", "https://api.example.com")}{inp("Method", "method", "GET")}{inp("Headers (JSON)", "headers", '{"Authorization":"Bearer ..."}')}{ta("Body", "body")}</>}
             {step.type === "action_ai" && <>{ta("Prompt", "prompt", "Summarize this data...")}
-              <div className="field-group"><label>ANTHROPIC API KEY</label><input type="password" value={step.config?.apikey || ""} onChange={e => onUpdate({ config: { ...step.config, apikey: e.target.value } })} placeholder="sk-ant-..." /></div>
+              <div className="field-group"><label>OPENROUTER API KEY</label><input type="password" value={step.config?.apikey || ""} onChange={e => onUpdate({ config: { ...step.config, apikey: e.target.value } })} placeholder="sk-or-v1-..." /></div>
             </>}
             {step.type === "action_mcp" && <>{inp("MCP Server URL", "mcp_url")}{inp("Tool Name", "tool_name")}{ta("Tool Input (JSON)", "tool_input")}</>}
             {step.type === "action_condition" && <>{inp("Field", "field", "response.status")}{inp("Operator", "operator", "equals")}{inp("Value", "value", "200")}</>}
@@ -689,11 +689,11 @@ async function runSteps(steps, onLog) {
       else if (step.type === "action_ai") {
         const key = step.config?.apikey;
         if (!key) { onLog("  ✗ No API key\n"); hasError = true; continue; }
-        onLog("  ◈ Calling Claude...\n");
+        onLog("  ◈ Calling AI...\n");
         const prompt = (step.config?.prompt || "Process:") + "\n\nContext: " + JSON.stringify(ctx).slice(0, 500);
-        const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}`, "X-Title": "FLASH" }, body: JSON.stringify({ model: "deepseek/deepseek-chat-v3.1:free", messages: [{ role: "user", content: prompt }] }) });
         const data = await res.json();
-        const text = data.content?.map(c => c.text || "").join("") || JSON.stringify(data);
+        const text = data.choices?.[0]?.message?.content || JSON.stringify(data);
         ctx.ai = text;
         onLog(`  ✓ ${text.slice(0, 300)}\n`);
       }
