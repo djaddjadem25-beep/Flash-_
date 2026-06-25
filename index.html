@@ -347,6 +347,7 @@ async function generateWorkflowFromPrompt(userPrompt, apiKey) {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
@@ -690,7 +691,7 @@ async function runSteps(steps, onLog) {
         if (!key) { onLog("  ✗ No API key\n"); hasError = true; continue; }
         onLog("  ◈ Calling Claude...\n");
         const prompt = (step.config?.prompt || "Process:") + "\n\nContext: " + JSON.stringify(ctx).slice(0, 500);
-        const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
+        const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
         const data = await res.json();
         const text = data.content?.map(c => c.text || "").join("") || JSON.stringify(data);
         ctx.ai = text;
