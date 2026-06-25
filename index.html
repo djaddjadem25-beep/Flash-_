@@ -349,7 +349,7 @@ async function generateWorkflowFromPrompt(userPrompt, apiKey) {
       "X-Title": "FLASH",
     },
     body: JSON.stringify({
-      model: "deepseek/deepseek-chat-v3.1:free",
+      model: "openrouter/free",
       messages: [
         { role: "system", content: AI_SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
@@ -691,7 +691,7 @@ async function runSteps(steps, onLog) {
         if (!key) { onLog("  ✗ No API key\n"); hasError = true; continue; }
         onLog("  ◈ Calling AI...\n");
         const prompt = (step.config?.prompt || "Process:") + "\n\nContext: " + JSON.stringify(ctx).slice(0, 500);
-        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}`, "X-Title": "FLASH" }, body: JSON.stringify({ model: "deepseek/deepseek-chat-v3.1:free", messages: [{ role: "user", content: prompt }] }) });
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}`, "X-Title": "FLASH" }, body: JSON.stringify({ model: "openrouter/free", messages: [{ role: "user", content: prompt }] }) });
         const data = await res.json();
         const text = data.choices?.[0]?.message?.content || JSON.stringify(data);
         ctx.ai = text;
