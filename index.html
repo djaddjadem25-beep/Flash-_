@@ -263,7 +263,12 @@ const sb = {
   },
   async saveWorkflow(token, wf) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/workflows`, { method: "POST", headers: { ...this.ah(token), Prefer: "return=representation" }, body: JSON.stringify(wf) });
-    return r.json();
+    const data = await r.json();
+    if (!r.ok) {
+      console.error("saveWorkflow failed:", r.status, data);
+      throw new Error((data && data.message) || `Save failed (${r.status})`);
+    }
+    return data;
   },
   async updateWorkflow(token, id, patch) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/workflows?id=eq.${id}`, { method: "PATCH", headers: { ...this.ah(token), Prefer: "return=representation" }, body: JSON.stringify(patch) });
@@ -821,9 +826,20 @@ function App() {
 
   const handleAIGenerated = async (generated) => {
     setAiModalOpen(false);
-    const res = await sb.saveWorkflow(session.token, { name: generated.name, steps: generated.steps, enabled: false });
-    const saved = Array.isArray(res) ? res[0] : res;
-    if (saved?.id) { setWorkflows(w => [saved, ...w]); setEditing(saved); }
+    try {
+      const res = await sb.saveWorkflow(session.token, { name: generated.name, steps: generated.steps, enabled: false });
+      const saved = Array.isArray(res) ? res[0] : res;
+      if (saved?.id) {
+        setWorkflows(w => [saved, ...w]);
+        setEditing(saved);
+      } else {
+        console.error("Save did not return a workflow:", res);
+        alert("Could not save the generated workflow. Check console for details, or try again.");
+      }
+    } catch (e) {
+      console.error("handleAIGenerated error:", e);
+      alert("Error saving workflow: " + e.message);
+    }
   };
 
   const saveFlow = async wf => {
