@@ -292,6 +292,7 @@ const STEP_TYPES = {
   trigger_schedule: { label: "Schedule", color: "#ffc107", icon: "⏰" },
   action_http: { label: "HTTP Request", color: "#4f8fff", icon: "🌐" },
   action_ai: { label: "AI Step", color: "#a78bfa", icon: "◈" },
+  action_agent: { label: "AI Agent", color: "#ec4899", icon: "✦" },
   action_condition: { label: "Condition", color: "#ffc107", icon: "◇" },
   action_transform: { label: "Transform", color: "#888", icon: "⟳" },
   action_mcp: { label: "MCP Tool", color: "#3ddc84", icon: "⬡" },
@@ -313,6 +314,7 @@ const AI_KIND_MAP = {
   schedule_trigger: "trigger_schedule",
   http_request: "action_http",
   ai_step: "action_ai",
+  ai_agent: "action_agent",
   condition: "action_condition",
   transform: "action_transform",
   mcp_tool: "action_mcp",
@@ -327,7 +329,7 @@ JSON shape:
   "name": "short workflow name",
   "steps": [
     {
-      "kind": "manual_trigger | webhook_trigger | schedule_trigger | http_request | ai_step | condition | transform | mcp_tool",
+      "kind": "manual_trigger | webhook_trigger | schedule_trigger | http_request | ai_step | ai_agent | condition | transform | mcp_tool",
       "label": "short human label for this step",
       "needs_credentials": ["list of short credential names this step needs, e.g. 'Gmail OAuth', 'Slack Webhook URL', 'API Key'"],
       "config_hints": { "key": "human readable hint of what goes in this config field" }
@@ -338,8 +340,9 @@ JSON shape:
 Rules:
 - Always start with exactly one trigger step (manual_trigger, webhook_trigger, or schedule_trigger).
 - Use http_request for any external API/service call (Gmail, Slack, Sheets, CRM, etc. are all reached via their HTTP APIs or webhooks).
-- Use ai_step only when the task needs text generation, summarization, classification, or reasoning.
-- Use condition for any "if/only if" branching logic mentioned by the user.
+- Use ai_step only when the task needs a single fixed text generation, summarization, classification, or reasoning call.
+- Use ai_agent when the task requires the AI to make multiple decisions in sequence, choose between several possible actions at runtime, or the user describes open-ended/conditional reasoning that can't be reduced to one fixed step (e.g. "figure out the best way to...", "decide what to do based on...", "handle this intelligently").
+- Use condition for any simple "if/only if" branching logic that does not require AI judgement.
 - Keep steps minimal and practical — most workflows need 2-5 steps.
 - needs_credentials should be specific and short, e.g. ["Slack Webhook URL"], ["Gmail API Key"], not full sentences.
 - If a step needs no credentials (e.g. manual_trigger, transform), use an empty array.
@@ -662,6 +665,17 @@ function StepCard({ step, index, total, onUpdate, onDelete }) {
             {step.type === "action_ai" && <>{ta("Prompt", "prompt", "Summarize this data...")}
               <div className="field-group"><label>OPENROUTER API KEY</label><input type="password" value={step.config?.apikey || ""} onChange={e => onUpdate({ config: { ...step.config, apikey: e.target.value } })} placeholder="sk-or-v1-..." /></div>
             </>}
+            {step.type === "action_agent" && <>
+              {ta("Goal", "goal", "Decide whether to notify Slack or send an email based on the message urgency...")}
+              <div className="field-group">
+                <label>AVAILABLE ACTIONS (one per line: name | url | method)</label>
+                <textarea value={step.config?.actions || ""} onChange={e => onUpdate({ config: { ...step.config, actions: e.target.value } })}
+                  placeholder={"notify_slack | https://hooks.slack.com/... | POST\nsend_email | https://api.example.com/email | POST"} />
+              </div>
+              <div className="field-group"><label>MAX STEPS</label><input value={step.config?.maxSteps || "3"} onChange={e => onUpdate({ config: { ...step.config, maxSteps: e.target.value } })} placeholder="3" /></div>
+              <div className="field-group"><label>OPENROUTER API KEY</label><input type="password" value={step.config?.apikey || ""} onChange={e => onUpdate({ config: { ...step.config, apikey: e.target.value } })} placeholder="sk-or-v1-..." /></div>
+              <p className="step-hint">The agent will reason step-by-step, choosing from your listed actions until the goal is met or max steps is reached.</p>
+            </>}
             {step.type === "action_mcp" && <>{inp("MCP Server URL", "mcp_url")}{inp("Tool Name", "tool_name")}{ta("Tool Input (JSON)", "tool_input")}</>}
             {step.type === "action_condition" && <>{inp("Field", "field", "response.status")}{inp("Operator", "operator", "equals")}{inp("Value", "value", "200")}</>}
             {step.type === "action_transform" && ta("Expression", "expression", "data.results.map(r => r.name)")}
@@ -674,6 +688,117 @@ function StepCard({ step, index, total, onUpdate, onDelete }) {
       {index < total - 1 && <div className="step-connector"><div className="step-connector-line" /></div>}
     </div>
   );
+}
+
+// Parses "name | url | method" lines into action definitions for the agent
+function parseAgentActions(raw) {
+  if (!raw) return [];
+  return raw.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
+    const parts = line.split("|").map(p => p.trim());
+    return { name: parts[0] || "action", url: parts[1] || "", method: (parts[2] || "GET").toUpperCase() };
+  });
+}
+
+// Runs a single ReAct-style agent loop: AI picks an action each turn, we execute it,
+// feed the result back, until it says "done" or we hit maxSteps.
+async function runAgentLoop(step, ctx, apiKey, onLog) {
+  const goal = step.config?.goal || "Complete the task.";
+  const actions = parseAgentActions(step.config?.actions);
+  const maxSteps = Math.max(1, Math.min(10, parseInt(step.config?.maxSteps, 10) || 3));
+
+  const actionList = actions.length
+    ? actions.map(a => `- ${a.name}: ${a.method} ${a.url}`).join("\n")
+    : "(no actions configured — reason only, then respond done)";
+
+  const agentSystemPrompt = `You are an autonomous agent inside an automation tool called FLASH.
+Goal: ${goal}
+
+Available actions you may call:
+${actionList}
+
+Context from earlier workflow steps: ${JSON.stringify(ctx).slice(0, 800)}
+
+On each turn, respond with ONLY valid JSON, no markdown fences, no commentary, in this exact shape:
+{"thought": "brief reasoning", "action": "<one of the action names above, or 'done'>", "input": "<text or data to send with the action, if any>"}
+
+If the goal is already met or no further action helps, respond with action "done".
+Output ONLY the JSON object.`;
+
+  let history = [];
+  let finished = false;
+  let lastResult = null;
+
+  for (let i = 0; i < maxSteps && !finished; i++) {
+    onLog(`  ↳ agent step ${i + 1}/${maxSteps}...\n`);
+
+    const historyText = history.length
+      ? "\n\nPrevious turns:\n" + history.map(h => `Action: ${h.action}\nResult: ${JSON.stringify(h.result).slice(0, 300)}`).join("\n\n")
+      : "";
+
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}`, "X-Title": "FLASH" },
+      body: JSON.stringify({
+        model: "openrouter/free",
+        messages: [{ role: "system", content: agentSystemPrompt + historyText }, { role: "user", content: "What is your next action?" }],
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`Agent API error ${res.status}: ${errText.slice(0, 150)}`);
+    }
+
+    const data = await res.json();
+    const rawText = (data.choices?.[0]?.message?.content || "").trim();
+
+    let cleaned = rawText;
+    if (cleaned.indexOf("```") === 0) cleaned = cleaned.slice(cleaned.indexOf("\n") + 1);
+    const fenceEnd = cleaned.lastIndexOf("```");
+    if (fenceEnd !== -1) cleaned = cleaned.slice(0, fenceEnd);
+    cleaned = cleaned.trim();
+
+    let decision;
+    try {
+      decision = JSON.parse(cleaned);
+    } catch (e) {
+      onLog(`  ✗ Agent returned invalid JSON, stopping.\n`);
+      break;
+    }
+
+    onLog(`  ◈ thought: ${(decision.thought || "").slice(0, 150)}\n`);
+    onLog(`  ◈ action: ${decision.action}\n`);
+
+    if (!decision.action || decision.action === "done") {
+      finished = true;
+      lastResult = decision;
+      break;
+    }
+
+    const matchedAction = actions.find(a => a.name === decision.action);
+    if (!matchedAction) {
+      onLog(`  ✗ Unknown action "${decision.action}", stopping.\n`);
+      history.push({ action: decision.action, result: { error: "unknown action" } });
+      break;
+    }
+
+    try {
+      const callRes = await fetch(matchedAction.url, {
+        method: matchedAction.method,
+        headers: { "Content-Type": "application/json" },
+        ...(matchedAction.method !== "GET" ? { body: JSON.stringify({ input: decision.input || "" }) } : {}),
+      });
+      const callData = await callRes.json().catch(() => ({ status: callRes.status }));
+      onLog(`  ✓ ${matchedAction.name} → ${callRes.status}\n`);
+      history.push({ action: decision.action, result: callData });
+      lastResult = callData;
+    } catch (e) {
+      onLog(`  ✗ ${matchedAction.name} failed: ${e.message}\n`);
+      history.push({ action: decision.action, result: { error: e.message } });
+    }
+  }
+
+  return { history, lastResult, finished };
 }
 
 // ── Run Engine ────────────────────────────────────────────────────────────────
@@ -701,6 +826,14 @@ async function runSteps(steps, onLog) {
         const text = data.choices?.[0]?.message?.content || JSON.stringify(data);
         ctx.ai = text;
         onLog(`  ✓ ${text.slice(0, 300)}\n`);
+      }
+      else if (step.type === "action_agent") {
+        const key = step.config?.apikey;
+        if (!key) { onLog("  ✗ No API key\n"); hasError = true; continue; }
+        onLog("  ✦ Starting agent...\n");
+        const { history, lastResult } = await runAgentLoop(step, ctx, key, onLog);
+        ctx.agent = { history, result: lastResult };
+        onLog(`  ✓ Agent finished after ${history.length} action(s)\n`);
       }
       else if (step.type === "action_condition") {
         const val = step.config?.field?.split(".").reduce((o, k) => o?.[k], ctx);
