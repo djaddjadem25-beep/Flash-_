@@ -231,10 +231,6 @@ const sb = {
   async signOut(token) {
     await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.ah(token) });
   },
-  async refreshSession(refreshToken) {
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: this.h, body: JSON.stringify({ refresh_token: refreshToken }) });
-    return r.json();
-  },
   async getSession() {
     try {
       const raw = window.location.hash || window.location.search;
@@ -255,20 +251,8 @@ const sb = {
       }
     } catch (e) { console.error("session parse error", e); }
     const token = localStorage.getItem("flash_token");
-    const refresh = localStorage.getItem("flash_refresh");
     const user = localStorage.getItem("flash_user");
     if (token && user) {
-      // Try to refresh the access token first so a stale token doesn't force re-login
-      if (refresh) {
-        try {
-          const rdata = await this.refreshSession(refresh);
-          if (rdata && rdata.access_token) {
-            localStorage.setItem("flash_token", rdata.access_token);
-            localStorage.setItem("flash_refresh", rdata.refresh_token || refresh);
-            return { token: rdata.access_token, user: JSON.parse(user) };
-          }
-        } catch (e) { /* fall through to using the old token */ }
-      }
       try { return { token, user: JSON.parse(user) }; } catch(e) { return null; }
     }
     return null;
@@ -314,6 +298,35 @@ const STEP_TYPES = {
 };
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
+
+// Smart URL formatter — auto-detects what the user pasted (a full URL, a bare
+// Telegram bot token, etc.) and returns the correct, fully-formed request URL.
+// This fixes the class of bug where a user pastes just a token/key into the
+// URL field and gets a confusing 404 instead of a working request.
+function smartFormatUrl(rawUrl) {
+  if (!rawUrl) return "";
+  let url = rawUrl.trim();
+
+  // Already a correctly formed Telegram Bot API URL — leave it alone.
+  if (/^https?:\/\/api\.telegram\.org\/bot/i.test(url)) return url;
+
+  // Looks like a bare Telegram bot token, e.g. "123456789:ABC-defGhIjk...".
+  // Auto-build the sendMessage endpoint so the user never has to hand-build
+  // the URL themselves.
+  if (/^\d+:[A-Za-z0-9_-]{20,}$/.test(url)) {
+    return `https://api.telegram.org/bot${url}/sendMessage`;
+  }
+
+  // Telegram URL missing the "bot" prefix, e.g. pasted as
+  // "https://api.telegram.org/123:ABC.../sendMessage"
+  const missingBotPrefix = url.match(/^https?:\/\/api\.telegram\.org\/(\d+:[A-Za-z0-9_-]+)(\/.*)?$/i);
+  if (missingBotPrefix) {
+    return `https://api.telegram.org/bot${missingBotPrefix[1]}${missingBotPrefix[2] || "/sendMessage"}`;
+  }
+
+  // Otherwise, trust what the user typed as-is.
+  return url;
+}
 
 function getStoredApiKey() {
   try { return localStorage.getItem("flash_openrouter_key") || ""; } catch(e) { return ""; }
@@ -444,7 +457,6 @@ function AuthPage({ onAuth }) {
       const data = mode === "signin" ? await sb.signIn(email, pass) : await sb.signUp(email, pass);
       if (data.access_token) {
         localStorage.setItem("flash_token", data.access_token);
-        localStorage.setItem("flash_refresh", data.refresh_token || "");
         localStorage.setItem("flash_user", JSON.stringify(data.user));
         onAuth({ token: data.access_token, user: data.user });
       } else if (data.error_description || data.msg) {
@@ -701,20 +713,33 @@ async function runSteps(steps, onLog) {
     try {
       if (step.type === "trigger_manual") { ctx.trigger = { ts: new Date().toISOString() }; onLog("  ✓ Triggered\n"); }
       else if (step.type === "action_http") {
-        const url = step.config?.url;
+        const url = smartFormatUrl(step.config?.url);
         if (!url) { onLog("  ✗ No URL\n"); hasError = true; continue; }
-        const method = (step.config?.method || "GET").toUpperCase();
-        const fetchOpts = {
-          method,
-          headers: step.config?.headers ? JSON.parse(step.config.headers) : {},
-        };
-        if (method !== "GET" && method !== "HEAD" && step.config?.body) {
-          fetchOpts.body = step.config.body;
+
+        let headers = {};
+        if (step.config?.headers) {
+          try { headers = JSON.parse(step.config.headers); }
+          catch (e) { onLog(`  ⚠ Headers JSON invalid, ignoring: ${e.message}\n`); }
         }
+
+        const method = (step.config?.method || "GET").trim().toUpperCase();
+        const fetchOpts = { method, headers };
+
+        // BUG FIX: body was never attached to the fetch call before, so every
+        // POST step (e.g. "Post to Telegram") silently sent an empty request.
+        const bodyText = step.config?.body;
+        if (method !== "GET" && method !== "HEAD" && bodyText) {
+          fetchOpts.body = bodyText;
+          const hasContentType = Object.keys(headers).some(h => h.toLowerCase() === "content-type");
+          if (!hasContentType) headers["Content-Type"] = "application/json";
+        }
+
+        onLog(`  → ${method} ${url}\n`);
         const res = await fetch(url, fetchOpts);
         const data = await res.json().catch(() => ({}));
         ctx.http = data;
-        onLog(`  ✓ ${res.status} — ${JSON.stringify(data).slice(0, 200)}\n`);
+        if (!res.ok) hasError = true;
+        onLog(`  ${res.ok ? "✓" : "✗"} ${res.status} — ${JSON.stringify(data).slice(0, 200)}\n`);
       }
       else if (step.type === "action_ai") {
         const key = step.config?.apikey;
