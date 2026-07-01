@@ -299,6 +299,27 @@ const STEP_TYPES = {
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
+// Resolves {{path.to.value}} placeholders inside a string using the running
+// workflow context (ctx). Supports dot paths and simple array indices, e.g.
+// {{http.news[0].title}}. Unresolvable placeholders are left untouched so
+// mistakes are visible instead of silently becoming "undefined".
+function interpolate(str, ctx, jsonSafe) {
+  if (typeof str !== "string" || str.indexOf("{{") === -1) return str;
+  return str.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, path) => {
+    try {
+      const value = path.split(".").reduce((obj, part) => {
+        const arrMatch = part.match(/^(\w+)\[(\d+)\]$/);
+        if (arrMatch) return obj?.[arrMatch[1]]?.[parseInt(arrMatch[2], 10)];
+        return obj?.[part];
+      }, ctx);
+      if (value === undefined || value === null) return match;
+      let text = String(value);
+      if (jsonSafe) text = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ").replace(/\r/g, " ");
+      return text;
+    } catch (e) { return match; }
+  });
+}
+
 // Smart URL formatter — auto-detects what the user pasted (a full URL, a bare
 // Telegram bot token, etc.) and returns the correct, fully-formed request URL.
 // This fixes the class of bug where a user pastes just a token/key into the
@@ -713,21 +734,19 @@ async function runSteps(steps, onLog) {
     try {
       if (step.type === "trigger_manual") { ctx.trigger = { ts: new Date().toISOString() }; onLog("  ✓ Triggered\n"); }
       else if (step.type === "action_http") {
-        const url = smartFormatUrl(step.config?.url);
+        const url = smartFormatUrl(interpolate(step.config?.url, ctx));
         if (!url) { onLog("  ✗ No URL\n"); hasError = true; continue; }
 
         let headers = {};
         if (step.config?.headers) {
-          try { headers = JSON.parse(step.config.headers); }
+          try { headers = JSON.parse(interpolate(step.config.headers, ctx)); }
           catch (e) { onLog(`  ⚠ Headers JSON invalid, ignoring: ${e.message}\n`); }
         }
 
         const method = (step.config?.method || "GET").trim().toUpperCase();
         const fetchOpts = { method, headers };
 
-        // BUG FIX: body was never attached to the fetch call before, so every
-        // POST step (e.g. "Post to Telegram") silently sent an empty request.
-        const bodyText = step.config?.body;
+        const bodyText = interpolate(step.config?.body, ctx, true);
         if (method !== "GET" && method !== "HEAD" && bodyText) {
           fetchOpts.body = bodyText;
           const hasContentType = Object.keys(headers).some(h => h.toLowerCase() === "content-type");
